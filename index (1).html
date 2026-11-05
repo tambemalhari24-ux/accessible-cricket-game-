@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Audio Cricket</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d3b1e">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--turf:#15532a;--chalk:#f6f3e8;--amber:#ffc21a}
+*{box-sizing:border-box}
+body{margin:0;padding:12px;min-height:100vh;font-family:system-ui,"Noto Sans Devanagari",sans-serif;background:repeating-linear-gradient(90deg,#0d3b1e 0 48px,#0f4121 48px 96px);color:var(--chalk);line-height:1.5}
+main{max-width:640px;margin:0 auto}
+h1{font-size:1.5rem;margin:4px 0 10px}
+#score{font-size:1.4rem;font-weight:700;background:var(--turf);border:3px solid var(--chalk);border-radius:12px;padding:12px;margin:0 0 8px}
+#status{font-size:1.2rem;min-height:4.5em;padding:8px 4px}
+button{font:inherit;font-weight:700;font-size:1.15rem;width:100%;margin:6px 0;padding:16px;border:3px solid var(--chalk);border-radius:14px;background:var(--turf);color:var(--chalk)}
+#hit{background:var(--amber);color:#111;border-color:#111}
+.shot{min-height:34vh;background:var(--amber);color:#111;border-color:#111;font-size:1.35rem}
+button:disabled{opacity:.7}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:4px solid #fff;outline-offset:3px}
+.row{display:flex;gap:8px}.row button{flex:1}
+label{display:flex;gap:10px;align-items:flex-start;margin:10px 0}
+input[type=checkbox]{width:26px;height:26px;flex:none}
+details{background:var(--turf);border:2px solid var(--chalk);border-radius:12px;padding:10px 14px;margin-top:10px}
+summary{font-weight:700}
+</style>
+</head>
+<body>
+<main>
+<h1 id="title"></h1>
+<p id="score"></p>
+<p id="status" role="status" aria-live="polite"></p>
+<button id="hit"></button>
+<div class="row"><button class="shot" id="sL" data-s="-1"></button><button class="shot" id="sC" data-s="0"></button><button class="shot" id="sR" data-s="1"></button></div>
+<div class="row"><button id="prac"></button><button id="rep"></button><button id="rpt"></button></div>
+<div class="row"><button id="test"></button><button id="langb"></button></div>
+<div class="row"><button id="ovb"></button><button id="lvb"></button></div>
+<button id="btb"></button>
+<div class="row"><button id="onb"></button><button id="prb"></button></div>
+<details id="prof"><summary id="profT"></summary>
+<label for="nm" id="nmL"></label><input id="nm" type="text" maxlength="20" autocomplete="nickname" style="font:inherit;font-size:1.15rem;padding:12px;width:100%;border-radius:10px;border:3px solid #f6f3e8">
+<p id="pst" role="region"></p><button id="gsb"></button></details>
+<label><input type="checkbox" id="vibc" checked><span id="vibl"></span></label>
+<label><input type="checkbox" id="tts"><span id="ttsl"></span></label>
+<details open><summary id="rulesT"></summary><div id="rulesB"></div></details>
+</main>
+<script>
+(function(){
+const S={
+en:{title:'Audio Cricket',hint:'Press the big yellow button to start. Listen to the bowler run in, then to the ball. Then press Hit left, Hit straight or Hit right, matching the side the ball comes from, just after it bounces. Use headphones to hear left and right.',
+start:'Start game',shot:'Hit the ball',again:'Play again',prac:'Practice ball',rep:'Tell score',test:'Test sound',lang:'हिंदी में खेलो',
+tts:'Spoken commentary. Leave this off if you use TalkBack or VoiceOver.',none:'Match not started',
+rulesT:'Rules and how to play',
+rules:['You are the batter. You choose a match of 2 or 5 overs, with 3 or 5 wickets. Score the target or more to win.',
+'First you hear the bowler\'s footsteps. Then the ball is released and its sound rises. If it comes from your left ear, it is on the leg side: press Hit left. From the middle: press Hit straight. From the right ear: press Hit right. You hear a thud when the ball bounces. Press right after the thud, just as the ball reaches you.',
+'Perfect timing on the right side: four or six. A bit early or late: one, two or three runs. Very early or late: an edge, a catch, or a miss. Wrong side: you miss, or mistime it. Miss a ball on the stumps and you are bowled. You may leave balls outside the line, and the keeper takes them.',
+'Each run has its own sound: footsteps and tones for 1, 2 and 3, a rope thwack and fanfare for four, a high whistle and roar for six. Two sharp beeps as the ball is released mean no ball: one extra run, and a free hit next, when you cannot be out. Each over the field is attacking (more catches) or defensive (boundaries get saved). A ball far outside the line can be a wide: leave it for one extra run. Level changes how forgiving the timing is. If you use Bluetooth headphones, raise the Bluetooth delay until shots feel right.',
+'Keyboard: Left arrow, Up arrow or Space, Right arrow for the three shots. Press S for the score.'],
+sc:(r,w,b,t)=>`${r} for ${w}, over ${Math.floor(b/6)}.${b%6}, target ${t}`,
+need:(r,b,w)=>`${r} runs needed from ${b} balls, ${w} wickets left`,
+welcome:(t,b,w)=>`Welcome! You are batting. Target ${t} runs from ${b} balls, ${w} wickets. Here comes the first ball.`,
+names:['Fast bowler','Medium pacer','Spinner'],
+ball:(o,b,n,nd)=>`Over ${o}, ball ${b}. ${n}. ${nd}. Get ready!`,
+pracBall:n=>`Practice ball. ${n}. Get ready!`,pracEnd:'That was a practice ball.',
+after:(r,w)=>`${r} for ${w}.`,
+when:['a bit early','a bit late'],dir:['leg side','off side'],
+bowledLeave:['Bowled! It was on the stumps and you left it.','Clean bowled! Stumps everywhere!'],
+dotLeave:['You left it alone. Dot ball.','Outside the line, left well. No run.'],
+six:['What a shot! Out of the ground! Six!','Perfect timing, high and gone! Six!'],
+four:['Middle of the bat! Races to the boundary, four!','Beautiful cover drive! Four!'],
+four2:(w,d)=>`${w}, but it races away ${d} for four!`,
+runs:(w,d,r)=>`${w}, ${d}, ${r==1?'single taken':r==2?'two runs':'three runs'}.`,
+caught:(w,d)=>`${w}, a thick edge, ${d}, and caught! Out!`,edge1:'Edged, just past the slip. One run.',
+bowledSwing:'Swung and missed, and the stumps are gone! Bowled!',
+miss:['Swung and missed. Dot ball.','The ball beats the bat. No run.'],
+win:r=>`You win! ${r} runs and the target is chased down. Brilliant!`,
+lose:(d,r)=>`Match over. You lost by ${d} runs. You scored ${r}. Try again!`,
+testDone:'Sound test done. You should have heard a beep in the left ear, one in the right ear, and a thud. If not, turn up media volume and check silent mode.',
+sp:'en-IN',sL:'Hit left',sC:'Hit straight',sR:'Hit right',vib:'Vibration on hits (works on most Android phones in Chrome)',playing:'Match in progress',
+shots:['to mid-wicket','straight down the ground','through the covers'],
+keep:['The keeper gathers it cleanly.','Safe in the keeper\'s gloves.'],
+att:'Attacking field, slips in place.',def:'Defensive field, fielders on the boundary.',
+dive:'A fielder dives at the rope and saves the boundary! Two runs.',
+fumble:'The keeper fumbles it! It runs away for a bye.',field:i=>`The ${['mid-wicket','long-on','cover'][i]} fielder gets to it and throws back to the keeper.`,mis:'Misfield! One extra run.',drop:sh=>`Dropped! The fielder spills the catch ${sh}. Not out!`,
+ovl:n=>`Match length: ${n} overs`,lv:'Level',lvn:['Easy','Normal','Hard'],bt:'Bluetooth delay',btl:['Off','Small','Medium','Large'],rpt:'Repeat',wide:'Wide ball! One extra run.',stats:(f,s)=>`You hit ${f} fours and ${s} sixes.`,best:b=>`Your best score is ${b}.`,
+onl:'Play online',prof:'My profile',nmL:'Your name',gin:'Sign in with Google',gout:'Sign out',
+pst:P=>`${P.name}. Matches ${P.m}, wins ${P.w}, losses ${P.l}. Total runs ${P.runs}, fours ${P.f4}, sixes ${P.s6}. Best score ${P.best}.`,
+noFb:'Google sign-in is not set up yet. The game owner must add the Firebase settings first.',noNet:'Could not load sign-in. Check your internet.',
+signed:n=>`Signed in as ${n}. Your profile is saved online.`,fail:'Sign-in failed.',onNeed:'Please sign in with Google first, from My profile.',
+onSoon:'You are signed in. Online rooms are coming in the next update.',
+nbCall:'No ball!',nbSave:'But it was a no ball, so you are not out!',fh:'Free hit! You cannot be out.',fhSave:'That would have been out, but it is a free hit, so you survive!',},
+hi:{title:'ऑडियो क्रिकेट',hint:'शुरू करने के लिए बड़ा पीला बटन दबाएँ। गेंदबाज़ की दौड़ सुनिए, फिर गेंद। जिस कान से गेंद आए, उसी तरफ का बटन (बाएँ, सीधा, दाएँ) टप्पे के ठीक बाद दबाइए। बाएँ-दाएँ सुनने के लिए हेडफ़ोन लगाएँ।',
+start:'खेल शुरू करो',shot:'शॉट मारो',again:'फिर से खेलो',prac:'अभ्यास गेंद',rep:'स्कोर बताओ',test:'आवाज़ टेस्ट',lang:'Play in English',
+tts:'बोलकर कमेंट्री। TalkBack या VoiceOver चालू हो तो इसे बंद रखें।',none:'मैच शुरू नहीं हुआ',
+rulesT:'नियम और कैसे खेलें',
+rules:['आप बल्लेबाज़ हैं। आप 2 या 5 ओवर का मैच चुन सकते हैं, जिसमें 3 या 5 विकेट मिलते हैं। लक्ष्य के बराबर या ज़्यादा रन बनाइए और जीतिए।',
+'पहले गेंदबाज़ के कदमों की आवाज़ आती है। फिर गेंद छूटती है और उसकी आवाज़ बढ़ती है। बाएँ कान से आए तो लेग साइड: "बाएँ मारो" दबाइए। बीच से आए तो "सीधा मारो"। दाएँ कान से आए तो "दाएँ मारो"। टप्पे पर "ठक" सुनाई देता है। उसके ठीक बाद, जब गेंद आप तक पहुँचे, बटन दबाइए।',
+'सही तरफ और सही समय: चौका या छक्का। थोड़ा आगे-पीछे: 1, 2 या 3 रन। बहुत आगे-पीछे: एज, कैच या चूक। गलत तरफ मारा तो चूक या बेमेल शॉट। सीधी स्टंप वाली गेंद चूकी तो बोल्ड। बाहर वाली गेंद छोड़ सकते हैं, कीपर उसे पकड़ लेता है।',
+'हर रन की अलग आवाज़ है: 1, 2, 3 रन पर कदम और सुर, चौके पर रस्सी की ठक और धुन, छक्के पर ऊँची सीटी और भीड़ का शोर। गेंद छूटते समय दो तेज़ बीप का मतलब नो बॉल: एक एक्स्ट्रा रन, और अगली गेंद फ्री हिट, जिस पर आप आउट नहीं होंगे। हर ओवर में फील्ड अटैकिंग (ज़्यादा कैच) या डिफेंसिव (चौके बचते हैं) होती है। लाइन से बहुत बाहर की गेंद वाइड हो सकती है: उसे छोड़ दें तो एक एक्स्ट्रा रन। लेवल से टाइमिंग की छूट बदलती है। ब्लूटूथ हेडफ़ोन हों तो ब्लूटूथ देरी तब तक बढ़ाइए जब तक शॉट सही न लगे।',
+'कीबोर्ड: बाएँ तीर, ऊपर तीर या Space, दाएँ तीर से तीन शॉट। S से स्कोर सुनिए।'],
+sc:(r,w,b,t)=>`${r}/${w}, ओवर ${Math.floor(b/6)}.${b%6}, लक्ष्य ${t}`,
+need:(r,b,w)=>`${r} रन चाहिए ${b} गेंद पर, ${w} विकेट बाकी`,
+welcome:(t,b,w)=>`स्वागत है! आप बल्लेबाज़ी कर रहे हैं। लक्ष्य ${t} रन, ${b} गेंदों में, ${w} विकेट। पहली गेंद आ रही है।`,
+names:['तेज़ गेंदबाज़','मीडियम पेसर','स्पिनर'],
+ball:(o,b,n,nd)=>`ओवर ${o}, गेंद ${b}। ${n}। ${nd}। तैयार!`,
+pracBall:n=>`अभ्यास गेंद। ${n}। तैयार!`,pracEnd:'यह अभ्यास गेंद थी।',
+after:(r,w)=>`${r} रन पर ${w} विकेट।`,
+when:['थोड़ा जल्दी','थोड़ा देर से'],dir:['लेग साइड','ऑफ साइड'],
+bowledLeave:['बोल्ड! गेंद सीधी स्टंप पर थी और आपने छोड़ दी।','क्लीन बोल्ड! स्टंप बिखर गए!'],
+dotLeave:['आपने गेंद छोड़ दी। डॉट बॉल।','गेंद बाहर थी, जाने दी। कोई रन नहीं।'],
+six:['क्या शॉट है! गेंद स्टेडियम के बाहर! छक्का!','बिल्कुल सही टाइमिंग, ऊँचा उठा और छक्का!'],
+four:['बल्ले के बीचों बीच! सीमा रेखा के पार, चौका!','शानदार कवर ड्राइव! चौका!'],
+four2:(w,d)=>`${w} मारा, ${d} चौका!`,
+runs:(w,d,r)=>`${w} मारा, ${d} ${r==1?'एक रन लिया':r==2?'दो रन लिए':'तीन रन लिए'}।`,
+caught:(w,d)=>`${w} मारा, किनारा लगा, ${d}, और कैच! आउट!`,edge1:'एज लगी, स्लिप के पास से निकली, एक रन।',
+bowledSwing:'बल्ला घूमा, गेंद स्टंप में! बोल्ड!',
+miss:['बल्ला हवा में घूमा, चूक गए। डॉट बॉल।','गेंद बल्ले से दूर निकल गई। कोई रन नहीं।'],
+win:r=>`जीत गए! ${r} रन बनाकर लक्ष्य पूरा किया! शानदार!`,
+lose:(d,r)=>`मैच खत्म। आप ${d} रन से हार गए। आपने ${r} रन बनाए। फिर से कोशिश करें!`,
+testDone:'आवाज़ टेस्ट पूरा। बाएँ कान में बीप, दाएँ कान में बीप और एक ठक सुनाई देना चाहिए। न आए तो मीडिया वॉल्यूम बढ़ाइए और साइलेंट मोड जाँचिए।',
+sp:'hi-IN',sL:'बाएँ मारो',sC:'सीधा मारो',sR:'दाएँ मारो',vib:'हिट पर वाइब्रेशन (ज़्यादातर Android फोन के Chrome में चलता है)',playing:'मैच चल रहा है',
+shots:['मिड-विकेट की ओर','सीधे मैदान में','कवर्स की ओर'],
+keep:['कीपर ने साफ़ पकड़ ली।','गेंद कीपर के दस्तानों में।'],
+att:'अटैकिंग फील्ड, स्लिप लगी है।',def:'डिफेंसिव फील्ड, फील्डर बाउंड्री पर हैं।',
+dive:'फील्डर ने रस्सी पर डाइव लगाकर चौका बचा लिया! दो रन।',
+fumble:'कीपर से गेंद छूट गई! गेंद दौड़ गई, एक बाई।',field:i=>`${['मिड-विकेट','लॉन्ग-ऑन','कवर'][i]} का फील्डर गेंद रोककर कीपर की तरफ फेंकता है।`,mis:'मिसफील्ड! एक रन ज़्यादा।',drop:sh=>`कैच छूट गया! फील्डर के हाथ से गेंद फिसली। आउट नहीं!`,
+ovl:n=>`मैच की लंबाई: ${n} ओवर`,lv:'लेवल',lvn:['आसान','सामान्य','कठिन'],bt:'ब्लूटूथ देरी',btl:['बंद','कम','मध्यम','ज़्यादा'],rpt:'दोहराओ',wide:'वाइड बॉल! एक एक्स्ट्रा रन।',stats:(f,s)=>`आपने ${f} चौके और ${s} छक्के लगाए।`,best:b=>`आपका सबसे अच्छा स्कोर ${b} है।`,
+onl:'ऑनलाइन खेलो',prof:'मेरी प्रोफ़ाइल',nmL:'आपका नाम',gin:'Google से साइन इन',gout:'साइन आउट',
+pst:P=>`${P.name}। मैच ${P.m}, जीत ${P.w}, हार ${P.l}। कुल रन ${P.runs}, चौके ${P.f4}, छक्के ${P.s6}। सबसे अच्छा स्कोर ${P.best}।`,
+noFb:'Google साइन-इन अभी सेट नहीं है। गेम के मालिक को पहले Firebase सेटिंग जोड़नी होगी।',noNet:'साइन-इन लोड नहीं हुआ। इंटरनेट जाँचिए।',
+signed:n=>`${n} के रूप में साइन इन हुए। आपकी प्रोफ़ाइल ऑनलाइन सेव है।`,fail:'साइन-इन नहीं हो पाया।',onNeed:'पहले "मेरी प्रोफ़ाइल" से Google साइन-इन कीजिए।',
+onSoon:'आप साइन इन हैं। ऑनलाइन रूम अगले अपडेट में आ रहे हैं।',
+nbCall:'नो बॉल!',nbSave:'लेकिन नो बॉल थी, इसलिए आप आउट नहीं हैं!',fh:'फ्री हिट! इस गेंद पर आउट नहीं होंगे।',fhSave:'यह आउट होता, पर फ्री हिट है, इसलिए बच गए!',}};
+let lg='en',ac,out,crowd,state='idle',ball=null,lastDown=0,tok=0,tts=false;
+const $=id=>document.getElementById(id),L=()=>S[lg],R=a=>a[Math.floor(Math.random()*a.length)];
+// Firebase settings: paste your config object here (see setup steps). Leave null until then.
+const FB_CONFIG={apiKey:"AIzaSyAeHP_XOEmaZfYIKdU0fSvUVQuMvT1dFMQ",authDomain:"blind-cricket-aa0c0.firebaseapp.com",projectId:"blind-cricket-aa0c0",storageBucket:"blind-cricket-aa0c0.firebasestorage.app",messagingSenderId:"933612693319",appId:"1:933612693319:web:bf05b3275cb16859e7ce62"
+/* , databaseURL:"PASTE-REALTIME-DATABASE-URL-HERE" */};
+const PROF=(()=>{const d={name:'Player',m:0,w:0,l:0,runs:0,f4:0,s6:0,best:0};try{return Object.assign(d,JSON.parse(localStorage.getItem('acp')||'{}'));}catch(e){return d;}})();
+let fbU=null;
+const saveP=()=>{try{localStorage.setItem('acp',JSON.stringify(PROF));}catch(e){}if(fbU)try{firebase.database().ref('users/'+fbU.uid).set(PROF);}catch(e){}};
+const G={runs:0,balls:0,wk:0,target:0,started:false,over:false};
+const CFG=(()=>{const d={ov:2,lv:1,bt:0,best:0};try{return Object.assign(d,JSON.parse(localStorage.getItem('acr')||'{}'));}catch(e){return d;}})();
+const saveC=()=>{try{localStorage.setItem('acr',JSON.stringify(CFG));}catch(e){}};
+const TB=()=>CFG.ov*6,MW=()=>CFG.ov===2?3:5,K=()=>[1.6,1,.75][CFG.lv],OFF=()=>[0,.08,.16,.24][CFG.bt];
+const over=()=>G.runs>=G.target||G.balls>=TB()||G.wk>=MW();
+let lastT='';function show(t){lastT=t;$('status').textContent=t;}
+function say(t,cb){
+  show(t);const my=++tok;let done=false;
+  const f=()=>{if(!done&&my===tok){done=true;cb&&cb();}};
+  if(!tts||!window.speechSynthesis){setTimeout(f,1000+t.length*75);return;}
+  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang=L().sp;u.onend=f;u.onerror=f;speechSynthesis.speak(u);}catch(e){}
+  setTimeout(f,1500+t.length*130);
+}
+const need=()=>L().need(G.target-G.runs,TB()-G.balls,MW()-G.wk);
+const scoreText=()=>G.started?L().sc(G.runs,G.wk,G.balls,G.target):L().none;
+function ui(){
+  const l=L();$('score').textContent=scoreText();
+  $('hit').textContent=(G.started&&!G.over)?l.playing:(G.over?l.again:l.start);$('hit').disabled=G.started&&!G.over;$('sL').textContent=l.sL;$('sC').textContent=l.sC;$('sR').textContent=l.sR;$('vibl').textContent=l.vib;$('ovb').textContent=l.ovl(CFG.ov);$('lvb').textContent=l.lv+': '+l.lvn[CFG.lv];$('btb').textContent=l.bt+': '+l.btl[CFG.bt];$('rpt').textContent=l.rpt;$('onb').textContent=l.onl;$('prb').textContent=l.prof;$('profT').textContent=l.prof;$('nmL').textContent=l.nmL;$('gsb').textContent=fbU?l.gout:l.gin;$('pst').textContent=l.pst(PROF);if(document.activeElement!==$('nm'))$('nm').value=PROF.name;
+  $('title').textContent=l.title;$('prac').textContent=l.prac;$('rep').textContent=l.rep;$('test').textContent=l.test;
+  $('langb').textContent=l.lang;$('ttsl').textContent=l.tts;$('rulesT').textContent=l.rulesT;
+  $('rulesB').innerHTML=l.rules.map(p=>'<p>'+p+'</p>').join('');
+  document.documentElement.lang=lg;document.title=l.title;
+}
+function loadFB(cb){
+  if(!FB_CONFIG){say(L().noFb);return;}
+  if(window.firebase&&firebase.apps&&firebase.apps.length){cb();return;}
+  const u=['app','auth','database'];let i=0;
+  const nx=()=>{if(i===u.length){firebase.initializeApp(FB_CONFIG);cb();return;}
+    const sc=document.createElement('script');sc.src='https://www.gstatic.com/firebasejs/10.12.2/firebase-'+u[i++]+'-compat.js';
+    sc.onload=nx;sc.onerror=()=>say(L().noNet);document.head.appendChild(sc);};
+  nx();
+}
+function signIn(){loadFB(()=>firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).then(r=>{
+  fbU=r.user;if(!PROF.name||PROF.name==='Player')PROF.name=fbU.displayName||PROF.name;
+  ui();say(L().signed(PROF.name));
+  try{firebase.database().ref('users/'+fbU.uid).get().then(sn=>{const c=sn.val();if(c&&c.m>PROF.m){Object.assign(PROF,c);ui();}saveP();}).catch(()=>{});}catch(e){}
+}).catch(e=>say(L().fail+' '+(e.code||''))));}
+function signOut(){try{firebase.auth().signOut();}catch(e){}fbU=null;ui();}
+function nbuf(d){const n=Math.max(1,Math.floor(ac.sampleRate*d)),b=ac.createBuffer(1,n,ac.sampleRate),a=b.getChannelData(0);for(let i=0;i<n;i++)a[i]=Math.random()*2-1;return b;}
+function panner(p){let n;if(ac.createStereoPanner){n=ac.createStereoPanner();n.pan.value=p;}else n=ac.createGain();n.connect(out);return n;}
+function initAudio(){
+  if(ac){if(ac.state!=='running')ac.resume();return;}
+  ac=new(window.AudioContext||window.webkitAudioContext)();ac.resume();
+  out=ac.createGain();out.gain.value=.9;out.connect(ac.destination);
+  const s=ac.createBufferSource();s.buffer=nbuf(2);s.loop=true;
+  const f=ac.createBiquadFilter();f.type='bandpass';f.frequency.value=550;f.Q.value=.6;
+  crowd=ac.createGain();crowd.gain.value=.06;s.connect(f);f.connect(crowd);crowd.connect(out);s.start();
+  tone(660,ac.currentTime,.12,{g:.2});
+}
+function tone(f,t,d,o={}){const{type='sine',g=.3,p=0,f2}=o,x=ac.createOscillator(),v=ac.createGain();
+  x.type=type;x.frequency.setValueAtTime(f,t);if(f2)x.frequency.exponentialRampToValueAtTime(f2,t+d);
+  v.gain.setValueAtTime(g,t);v.gain.exponentialRampToValueAtTime(.001,t+d);
+  x.connect(v);v.connect(panner(p));x.start(t);x.stop(t+d+.05);}
+function burst(t,d,o={}){const{g=.3,p=0,fr=1500,q=1}=o,s=ac.createBufferSource(),f=ac.createBiquadFilter(),v=ac.createGain();
+  s.buffer=nbuf(d+.05);f.type='bandpass';f.frequency.value=fr;f.Q.value=q;
+  v.gain.setValueAtTime(g,t);v.gain.exponentialRampToValueAtTime(.001,t+d);
+  s.connect(f);f.connect(v);v.connect(panner(p));s.start(t);s.stop(t+d+.05);}
+function cheer(big){const t=ac.currentTime;crowd.gain.cancelScheduledValues(t);crowd.gain.setValueAtTime(crowd.gain.value,t);
+  crowd.gain.linearRampToValueAtTime(big?.55:.25,t+.4);crowd.gain.linearRampToValueAtTime(.06,t+3.5);}
+function vib(n){try{if($('vibc').checked&&navigator.vibrate)navigator.vibrate(n);}catch(e){}}
+function flight(t0,T,line){
+  const x=ac.createOscillator(),v=ac.createGain();x.type='triangle';
+  x.frequency.setValueAtTime(250,t0);x.frequency.exponentialRampToValueAtTime(750,t0+T);
+  v.gain.setValueAtTime(.02,t0);v.gain.exponentialRampToValueAtTime(.35,t0+T);v.gain.linearRampToValueAtTime(0,t0+T+.06);
+  x.connect(v);v.connect(panner(line*.85));x.start(t0);x.stop(t0+T+.1);
+  const b=t0+T*.62;tone(120,b,.2,{g:.8,p:line*.5,f2:55});burst(b,.08,{g:.4,p:line*.5,fr:700});
+}
+function crash(t){burst(t,.5,{g:.8,fr:900,q:.4});tone(90,t,.4,{g:.6,type:'square',f2:40});}
+function fumbleSound(t){keeper(t);burst(t+.12,.3,{g:.4,p:.2,fr:400});tone(200,t+.12,.2,{g:.3,f2:90,type:'square'});}
+function fieldSound(t,p){burst(t,.15,{g:.3,p,fr:500});burst(t+.4,.3,{g:.25,p:p*.3,fr:1800});keeper(t+.8);}
+function kp(t,l){if(G.fum<1&&Math.random()<.08){G.fum++;fumbleSound(t);return[l.fumble,1];}keeper(t);return[R(l.keep),0];}
+function keeper(t){burst(t,.1,{g:.8,fr:600,q:1.5});tone(150,t,.09,{g:.6});}
+function runSound(r,t,p){
+  if(r<=3){for(let i=0;i<r;i++){const u=t+i*.3;burst(u,.07,{g:.3,p:-.2,fr:250,q:2});burst(u+.07,.07,{g:.3,p:.2,fr:250,q:2});tone(520+i*150,u,.18,{type:'triangle',g:.3});}return;}
+  if(r===4){burst(t,.5,{g:.5,p,fr:1200});burst(t+.6,.3,{g:.6,p,fr:2500,q:3});tone(160,t+.6,.25,{g:.8,p,f2:70});[392,523,659].forEach((f,i)=>tone(f,t+.9+i*.15,.25,{g:.3}));return;}
+  tone(300,t,1.2,{g:.45,p,f2:1700,type:'triangle'});burst(t+1.2,.8,{g:.4,fr:3500,q:.5});[523,659,784,1047].forEach((f,i)=>tone(f,t+1.3+i*.13,.3,{g:.3}));
+}
+function startMatch(){
+  initAudio();
+  Object.assign(G,{runs:0,balls:0,wk:0,target:CFG.ov*8+Math.floor(Math.random()*(CFG.ov*4+1)),started:true,over:false,fum:0,f4:0,s6:0});
+  ui();say(L().welcome(G.target,TB(),MW()),nextBall);
+}
+function pick(prac){
+  const k=R([{i:0,T:1.45},{i:1,T:1.8},{i:2,T:2.3,spin:1}]);
+  return Object.assign({line:R([-1,0,0,1]),prac:!!prac},k);
+}
+function nextBall(){
+  if(over())return end();
+  ball=pick(false);ball.nb=Math.random()<.1;ball.wd=!ball.nb&&ball.line!==0&&Math.random()<.12;state='wait';const l=L();let pre='';
+  if(G.balls%6===0){G.att=Math.random()<.5;pre=(G.att?l.att:l.def)+' ';}
+  if(G.fh)pre+=l.fh+' ';
+  say(l.ball(Math.floor(G.balls/6)+1,G.balls%6+1,l.names[ball.i],need())+' '+pre,()=>setTimeout(deliver,500));
+}
+function deliver(){
+  const t0=ac.currentTime+.2,all=[0,.55,1,1.35,1.65,1.9],steps=ball.spin?all.slice(0,3):all;
+  steps.forEach((s,i)=>burst(t0+s,.09,{g:.22+i*.05,p:-.1,fr:300,q:2}));
+  const rel=t0+steps[steps.length-1]+.25;
+  burst(rel-.02,.25,{g:.2,fr:2600});
+  if(ball.nb){tone(1500,rel+.04,.09,{g:.35});tone(1500,rel+.2,.09,{g:.35});}
+  ball.hitAt=rel+ball.T+OFF();flight(rel,ball.T,ball.line);state='bowl';
+  ball.timer=setTimeout(()=>resolve(null),(ball.hitAt+.4-ac.currentTime)*1000);
+}
+function tap(s){
+  initAudio();
+  if(state==='idle'){startMatch();return;}
+  if(state!=='bowl')return;
+  const d=ac.currentTime-ball.hitAt;
+  if(d<-.5)return;
+  clearTimeout(ball.timer);resolve(d,s);
+}
+function resolve(d,s){
+  state='wait';const l=L(),t=ac.currentTime,Ln=ball.line,fh=G.fh&&!ball.prac;
+  let r=0,wkt=false,ct=false,txt,a=9,p=0,sh=l.shots[(s||0)+1];
+  if(d!==null){a=Math.abs(d)/K();const mm=Math.abs(s-Ln);if(mm===1)a+=.14;else if(mm===2)a=9;p=s*.8;}
+  const w=d!==null&&d<0?l.when[0]:l.when[1];
+  if(d===null){
+    if(Ln===0){wkt=true;txt=R(l.bowledLeave);crash(t);}else{const k=kp(t+.1,l);txt=R(l.dotLeave)+' '+k[0];r=k[1];}
+  }else{
+    if(a<.34){burst(t,.15,{g:.8,p,fr:2200,q:2});tone(190,t,.18,{g:.7,p,f2:90});}
+    else burst(t,.25,{g:.15,fr:900});
+    if(a<.06){r=Math.random()<.5?6:4;txt=R(r===6?l.six:l.four);}
+    else if(a<.13){r=4;txt=l.four2(w,sh);}
+    else if(a<.22){r=R([1,1,2,2,3]);txt=l.runs(w,sh,r)+' '+l.field(s+1);fieldSound(t+.3,p);if(Math.random()<.08){r++;txt+=' '+l.mis;}}
+    else if(a<.34){if(Math.random()<(G.att?.55:.3)){wkt=true;ct=true;txt=l.caught(w,sh);}else{r=1;txt=l.edge1;}}
+    else if(Ln===0){wkt=true;txt=l.bowledSwing;crash(t+.1);}
+    else{const k=kp(t+.2,l);txt=R(l.miss)+' '+k[0];r=k[1];}
+    if(r===4&&!G.att&&Math.random()<.5){r=2;txt=l.dive;}
+    if(r&&!wkt)runSound(r,t+.25,p);
+  }
+  if(ct&&Math.random()<.12){wkt=false;ct=false;txt=l.drop(sh);fumbleSound(t+.3);}
+  if(wkt&&fh){wkt=false;r=0;txt=l.fhSave;}
+  let extra=0;
+  if(ball.wd&&d===null){extra=1;txt=l.wide+' '+txt;}
+  if(ball.nb){extra=1;if(wkt){wkt=false;txt+=' '+l.nbSave;}txt=l.nbCall+' '+txt;}
+  vib(wkt?300:r===6?[120,60,120,60,200]:r===4?[80,40,80]:r?[50]:d===null?[]:[25]);
+  if(r===6)cheer(true);else if(r)cheer(false);
+  if(ball.prac){say(txt+' '+l.pracEnd,()=>{state='idle';});return;}
+  if(!ball.nb&&!(ball.wd&&d===null))G.balls++;
+  if(r===4)G.f4++;if(r===6)G.s6++;
+  G.runs+=r+extra;if(wkt)G.wk++;G.fh=!!ball.nb;ui();
+  const done=over();
+  say(txt+(done?'':' '+l.after(G.runs,G.wk)),()=>setTimeout(nextBall,700));
+}
+function end(){
+  const l=L(),w=G.runs>=G.target;G.over=true;state='idle';cheer(w);ui();
+  if(G.runs>CFG.best){CFG.best=G.runs;saveC();}
+  PROF.m++;if(w)PROF.w++;else PROF.l++;PROF.runs+=G.runs;PROF.f4+=G.f4;PROF.s6+=G.s6;if(G.runs>PROF.best)PROF.best=G.runs;saveP();ui();
+  say((w?l.win(G.runs):l.lose(G.target-G.runs,G.runs))+' '+l.stats(G.f4,G.s6)+' '+l.best(CFG.best),()=>{});
+}
+$('hit').addEventListener('click',()=>{initAudio();if(state==='idle')startMatch();});
+['sL','sC','sR'].forEach(id=>{const b=$(id),sd=+b.dataset.s;
+  b.addEventListener('pointerdown',()=>{lastDown=performance.now();tap(sd);});
+  b.addEventListener('click',()=>{if(performance.now()-lastDown>500)tap(sd);});});
+$('prac').addEventListener('click',()=>{
+  if(state==='bowl'||state==='wait')return;initAudio();
+  ball=pick(true);state='wait';say(L().pracBall(L().names[ball.i]),()=>setTimeout(deliver,500));
+});
+$('ovb').addEventListener('click',()=>{if(state!=='idle')return;CFG.ov=CFG.ov===2?5:2;saveC();ui();show(L().ovl(CFG.ov));});
+$('lvb').addEventListener('click',()=>{if(state!=='idle')return;CFG.lv=(CFG.lv+1)%3;saveC();ui();show(L().lv+': '+L().lvn[CFG.lv]);});
+$('btb').addEventListener('click',()=>{if(state!=='idle')return;CFG.bt=(CFG.bt+1)%4;saveC();ui();show(L().bt+': '+L().btl[CFG.bt]);});
+$('rpt').addEventListener('click',()=>{if(tts)say(lastT);else{$('status').textContent='';setTimeout(()=>{$('status').textContent=lastT;},80);}});
+$('onb').addEventListener('click',()=>{if(state!=='idle')return;say(fbU?L().onSoon:L().onNeed);});
+$('prb').addEventListener('click',()=>say(L().pst(PROF)));
+$('nm').addEventListener('change',e=>{PROF.name=e.target.value.trim()||'Player';saveP();ui();});
+$('gsb').addEventListener('click',()=>{if(fbU)signOut();else signIn();});
+$('rep').addEventListener('click',()=>say(G.started?scoreText()+'. '+need():L().none));
+$('test').addEventListener('click',()=>{
+  initAudio();vib([200]);const t=ac.currentTime+.1;
+  tone(440,t,.35,{p:-1,g:.5});tone(440,t+.6,.35,{p:1,g:.5});tone(120,t+1.2,.25,{g:.8,f2:55});
+  setTimeout(()=>say(L().testDone),1700);
+});
+$('langb').addEventListener('click',()=>{lg=lg==='en'?'hi':'en';ui();if(!G.started)show(L().hint);else show(scoreText());});
+$('tts').addEventListener('change',e=>{tts=e.target.checked;$('status').setAttribute('aria-live',tts?'off':'polite');try{speechSynthesis.cancel();}catch(x){}});
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  if((e.code==='Space'||e.code==='Enter')&&e.target.tagName!=='BUTTON'&&e.target.tagName!=='SUMMARY'){e.preventDefault();tap(0);}
+  if(e.key==='ArrowLeft'){e.preventDefault();tap(-1);}
+  if(e.key==='ArrowRight'){e.preventDefault();tap(1);}
+  if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();tap(0);}
+  if(e.key==='s'||e.key==='S')$('rep').click();
+});
+window.addEventListener('error',e=>show('Error: '+e.message));
+ui();show(L().hint);
+try{if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});}catch(e){}
+})();
+</script>
+</body>
+</html>
